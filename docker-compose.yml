@@ -17,6 +17,11 @@ x-vars:
   reranker_port: &reranker_port ${RERANKER_PORT:-50051}
   reranker_model: &reranker_model ${RERANKER_MODEL:-}
   log_level: &log_level ${LOG_LEVEL:-INFO}
+  model_smoketest_prompt: &model_smoketest_prompt ${MODEL_SMOKETEST_PROMPT:-Hello, who are you?}
+  # CPU by default; docker-compose.gpu.yml overrides this to a CUDA wheel
+  # index. Not just a default ARG in the Dockerfile because compose only
+  # forwards build args it's told about here.
+  reranker_torch_index: &reranker_torch_index ${RERANKER_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
 
 services:
   ollama:
@@ -60,9 +65,32 @@ services:
       - ./ollama/entrypoint.sh:/entrypoint.sh:ro
     restart: "no"
 
+  # Manual smoke test, not part of `make up` -- sends a fixed prompt to
+  # every OLLAMA_MODELS entry and logs the reply so a human can eyeball
+  # that each one actually works, not just that it loaded. Gated behind
+  # the `smoketest` profile so a plain `docker compose up`/`up -d` never
+  # starts it; run it with `make smoketest` (see ollama/smoketest.sh).
+  model-smoketest:
+    image: ollama/ollama:latest
+    container_name: model-smoketest
+    profiles: ["smoketest"]
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+      OLLAMA_MODELS: *ollama_models
+      MODEL_SMOKETEST_PROMPT: *model_smoketest_prompt
+    entrypoint: ["/entrypoint.sh"]
+    volumes:
+      - ./ollama/smoketest.sh:/entrypoint.sh:ro
+    restart: "no"
+
   reranker:
     build:
       context: ./reranker
+      args:
+        TORCH_INDEX_URL: *reranker_torch_index
     container_name: reranker
     # Not unless-stopped: entrypoint.sh exits 0 (not a crash) when
     # RERANKER_MODEL is unset, so this must not restart-loop in that case.

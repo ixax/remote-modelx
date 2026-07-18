@@ -24,6 +24,8 @@ from environs import Env
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+import torch
+
 from .libs.config import RerankerConfig, load_config
 from .libs.cpu import detect_num_threads
 from .libs.logging_config import configure_logging, get_logger
@@ -44,9 +46,20 @@ raw_config = load_config(Path("config.yml"))
 raw_config.raw["model"] = RERANKER_MODEL
 config = raw_config.validate(RerankerConfig)
 
-logger.info("loading reranker model %s ...", config.model)
+# CrossEncoder picks cuda over cpu on its own (see libs/model.py) -- logged
+# here so "why is this slow" / "is the GPU overlay actually doing anything"
+# don't require reading source to answer.
+_device = "cuda" if torch.cuda.is_available() else "cpu"
+logger.info(
+    "loading reranker model %s (max_length=%d, num_threads=%d, device=%s) -- "
+    "downloads from Hugging Face on first run if not already cached, can take a while",
+    config.model,
+    config.max_length,
+    RERANKER_NUM_THREADS,
+    _device,
+)
 _model = load_model(config.model, config.max_length, RERANKER_NUM_THREADS)
-logger.info("reranker ready")
+logger.info("reranker ready, listening for /rerank requests")
 
 app = FastAPI()
 

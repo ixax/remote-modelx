@@ -1,5 +1,5 @@
-# Optional override: reserves the host's NVIDIA GPU for the `ollama`
-# service. Apply on top of the base file, don't replace it:
+# Optional override: reserves the host's NVIDIA GPU for the `ollama` and
+# `reranker` services. Apply on top of the base file, don't replace it:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 #
 # Requires an NVIDIA GPU reachable from Docker -- on Windows that's Docker
@@ -8,8 +8,25 @@
 # driver install inside WSL/the container). On Linux, the NVIDIA Container
 # Toolkit. Not applicable on macOS -- Docker Desktop there has no GPU
 # passthrough path (Metal or otherwise) into containers.
+#
+# reranker's cu121 build assumes a CUDA 12.1-compatible driver (most
+# recent-ish NVIDIA drivers qualify). For an older driver, rebuild with
+# RERANKER_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 (or
+# whichever series matches) instead of relying on this file's default.
 services:
   ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  reranker:
+    build:
+      args:
+        TORCH_INDEX_URL: ${RERANKER_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}
     deploy:
       resources:
         reservations:

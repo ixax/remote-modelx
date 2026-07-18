@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: up up-gpu down restart status ps logs pull clean
+.PHONY: up up-gpu down restart status ps logs pull smoketest clean
 
 up:
 	docker compose up -d --build
@@ -25,3 +25,6 @@ logs:
 
 pull:
 	docker compose run --rm ollama-pull
+
+smoketest:
+	docker compose --profile smoketest run --rm model-smoketest

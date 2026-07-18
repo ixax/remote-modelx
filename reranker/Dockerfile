@@ -5,9 +5,13 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/root/.cache/huggingface
 
 COPY requirements.txt .
-# torch is CPU-only here -- pull it from PyTorch's own CPU wheel index so
-# pip doesn't grab a multi-GB CUDA build.
-RUN pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu \
+# CPU by default so pip doesn't grab a multi-GB CUDA build on machines
+# without an NVIDIA GPU. Override with --build-arg TORCH_INDEX_URL=
+# https://download.pytorch.org/whl/cu121 (or whichever CUDA build matches
+# the host driver) for a GPU build -- see docker-compose.gpu.yml, which
+# sets this automatically.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.4.1 --index-url $TORCH_INDEX_URL \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
