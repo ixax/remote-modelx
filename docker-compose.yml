@@ -44,8 +44,6 @@ services:
   ollama-pull:
     image: ollama/ollama:latest
     container_name: ollama-pull
-    mem_limit: 256m
-    cpus: 0.25
     depends_on:
       ollama:
         condition: service_healthy
@@ -70,11 +68,6 @@ services:
     # RERANKER_MODEL is unset, so this must not restart-loop in that case.
     # A real crash (non-zero exit) still gets retried.
     restart: on-failure
-    mem_limit: 1.5g
-    mem_reservation: 512m
-    # reranker/src/libs/cpu.py reads this quota back out of the container's
-    # cgroup to size torch's thread count -- this is the only place it's set.
-    cpus: 3.0
     # Matches the Dockerfile CMD -- kept explicit here so it's an obvious,
     # easy override point (e.g. append `--reload` for dev without editing
     # the image).
