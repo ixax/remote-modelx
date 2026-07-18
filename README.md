@@ -101,9 +101,14 @@ make smoketest        # CPU/NVIDIA
 make smoketest-host   # AMD
 ```
 
-Sends `MODEL_SMOKETEST_PROMPT` (default `"Hello, who are you?"`) to every model in `OLLAMA_MODELS`, one at a time, and logs each reply to the terminal -- a quick "does this model actually answer sensibly" check, as opposed to `ollama-pull`'s own warm-up call, which discards the response and ignores failures. Manual and opt-in: gated behind Compose's `smoketest` profile, so it never runs as part of `make up`/`up-gpu-nvidia`/`up-amd`, and it exits after one pass instead of staying up.
+Tests both services, each independently skippable/failable -- a model or the reranker missing its config, or either service being down, doesn't stop the other from being tested:
 
-Embedding-only models (e.g. `bge-m3`) may fail this depending on your Ollama version -- some reject a plain chat-style prompt outright (no chat template) even though their real (embedding) calls work fine, others return the raw embedding vector instead of erroring. Either way, a `FAILED` line for one of those isn't necessarily a problem; see `ollama/smoketest.sh`.
+- **Ollama**: sends `MODEL_SMOKETEST_PROMPT` (default `"Hello, who are you?"`) to every model in `OLLAMA_MODELS`, one at a time, and logs each reply to the terminal -- a quick "does this model actually answer sensibly" check, as opposed to `ollama-pull`'s own warm-up call, which discards the response and ignores failures. Skipped with a log line if `OLLAMA_MODELS` is unset.
+- **Reranker**: sends a real `POST /rerank` request and checks the response actually has the shape described in [Reranker API](#reranker-api) above. Skipped with a log line if `RERANKER_MODEL` is unset; logged as `FAILED` (not a hard error -- the rest of the script still runs) if the request fails, e.g. the `reranker` container isn't up yet or isn't healthy.
+
+Manual and opt-in either way: gated behind Compose's `smoketest` profile, so it never runs as part of `make up`/`up-gpu-nvidia`/`up-amd`, and it exits after one pass instead of staying up.
+
+Embedding-only Ollama models (e.g. `bge-m3`) may fail their check depending on your Ollama version -- some reject a plain chat-style prompt outright (no chat template) even though their real (embedding) calls work fine, others return the raw embedding vector instead of erroring. Either way, a `FAILED` line for one of those isn't necessarily a problem; see `ollama/smoketest.sh`.
 
 ## Re-pulling / changing models
 

@@ -53,6 +53,12 @@ services:
       OLLAMA_HOST: *ollama_host
       OLLAMA_MODELS: *ollama_models
       MODEL_SMOKETEST_PROMPT: *model_smoketest_prompt
+      RERANKER_MODEL: *reranker_model
+      # Not the published RERANKER_PORT anchor (that's the host-side
+      # mapping) -- model-smoketest reaches reranker over the Compose
+      # network by service name, on its fixed internal port.
+      RERANKER_HOST: reranker
+      RERANKER_PORT: "50051"
     entrypoint: ["/entrypoint.sh"]
     volumes:
       - ./ollama/smoketest.sh:/entrypoint.sh:ro

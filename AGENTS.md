@@ -18,7 +18,7 @@ On native Linux with a ROCm-supported card, AMD GPU-in-Docker generally does wor
 
 ## Ollama
 
-`ollama-pull`/`model-smoketest` are plain HTTP clients against `OLLAMA_HOST` (`ollama/entrypoint.sh` / `ollama/smoketest.sh`, bind-mounted) -- they don't care whether that's the Docker `ollama` service or a host-native install, so there's one implementation for both paths, not two.
+`ollama-pull`/`model-smoketest` are plain HTTP clients against `OLLAMA_HOST` (`ollama/entrypoint.sh` / `ollama/smoketest.sh`, bind-mounted) -- they don't care whether that's the Docker `ollama` service or a host-native install, so there's one implementation for both paths, not two. `model-smoketest` (only, not `ollama-pull`) also probes the `reranker` service -- see "Both" below, since that half isn't Ollama-specific.
 
 - **CPU/NVIDIA**: `OLLAMA_HOST` defaults to `ollama:11434` (the `x-vars` default in `docker-compose.yml`), the Docker `ollama` service. `make up`/`up-gpu-nvidia` start it; `ollama-pull`/`model-smoketest` `depends_on` it. `OLLAMA_KEEP_ALIVE: "-1"` on the `ollama` service (never auto-unload a loaded model) is why `entrypoint.sh` runs a throwaway `ollama run "$MODEL" "hi"` after each `pull` -- warms the model into memory once at pull time instead of eating the cold-load stall on a consumer's first real request. `docker-compose.nvidia.yml` only touches the `ollama` service's `deploy.resources.reservations` -- it's an override applied with `-f docker-compose.yml -f docker-compose.nvidia.yml`, never a replacement for the base file.
 - **AMD**: Ollama installed natively on the host instead -- there's no Docker `ollama` service to point at, so `make up-amd`/`pull-host`/`smoketest-host` override `OLLAMA_HOST=host.docker.internal:11434` and pass `--no-deps` (skip the `depends_on: ollama`/`ollama-pull` chain, since that service is never started on this path). `extra_hosts: ["host.docker.internal:host-gateway"]` on both services makes `host.docker.internal` resolve on native Linux Docker Engine too, not just Docker Desktop.
@@ -37,6 +37,8 @@ On native Linux with a ROCm-supported card, AMD GPU-in-Docker generally does wor
 ## Both
 
 No env vars are read anywhere except in `docker-compose.yml`/`ollama/entrypoint.sh`/`reranker/src` themselves -- there's no other app code here to keep in sync.
+
+`ollama/smoketest.sh` tests both services in one pass, independently: the Ollama loop (unchanged) and, separately, a real `POST /rerank` against `reranker:50051` (`RERANKER_HOST`/`RERANKER_PORT` in `model-smoketest`'s `environment:`, always the Compose-internal service name/port, never the host-published `RERANKER_PORT` anchor) if `RERANKER_MODEL` is set. Each half logs its own skip/OK/FAILED independently -- one being unset or down doesn't stop the other from running. No `depends_on: reranker` on `model-smoketest`: `reranker` may be intentionally not running (`RERANKER_MODEL` unset), so the script probes it and reports rather than blocking on it. Same `curl`-less-image constraint as `reranker`'s own healthcheck (see "Reranker" above) is why this is a raw `/dev/tcp` POST via `bash -c` (needs `bash`, not `sh` -- `ollama/ollama:latest` has it), not a real HTTP client.
 
 ## docker-compose.yml conventions
 
