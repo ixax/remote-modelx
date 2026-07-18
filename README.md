@@ -59,36 +59,25 @@ make smoketest-host    # AMD
 
 All optional -- copy `.env.example` to `.env` and uncomment/edit as needed; every var below has a working default or a no-op empty default if left unset.
 
-### Ollama
+Not set in this project's `.env` at all: the "Consumer project" group below is set on the *consumer* project's side once this stack is up, see [Connecting a consumer project](#connecting-a-consumer-project). Its `OLLAMA_HOST` is a bare host, unlike the `host:port` one in the "Ollama" group -- different variable, different `.env` file, same name by coincidence.
 
 | Variable | Default | Description |
 |---|---|---|
+| **Ollama** | | |
 | `OLLAMA_MODELS` | *(unset)* | Comma-separated models to pull + warm into Ollama, e.g. `gemma3:12b,bge-m3`. Read by `ollama-pull`/`model-smoketest`. Unset means no Ollama models at all. |
 | `OLLAMA_PORT` | `11434` | Host-published port for the Docker `ollama` service. CPU/NVIDIA only -- ignored on AMD (`make up-amd`/`*-host` targets hardcode `host.docker.internal:11434` instead, Ollama's own default port). |
 | `OLLAMA_HOST` | `ollama:11434` | Internal, not in `.env.example` -- where `ollama-pull`/`model-smoketest` point the `ollama` CLI, in Ollama's own `host:port` format (not the bare-host `OLLAMA_HOST` below under "Consumer project", which is this repo's own, unrelated convention for a different `.env`). The `-host` Makefile targets override it via `-e`, not `.env`. |
-
-### Reranker
-
-| Variable | Default | Description |
-|---|---|---|
+| **Reranker** | | |
 | `RERANKER_MODEL` | *(unset)* | Cross-encoder model, pulled from Hugging Face at container startup (not build time), e.g. `BAAI/bge-reranker-v2-m3`. Unset means the `reranker` container logs why and exits instead of starting. |
 | `RERANKER_PORT` | `50051` | Host-published port for the reranker HTTP service. |
 | `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Ollama has its own separate logging, unaffected by this. |
-
-### Testing
-
-| Variable | Default | Description |
-|---|---|---|
+| **Testing** | | |
 | `MODEL_SMOKETEST_PROMPT` | `Hello, who are you?` | Prompt sent to each `OLLAMA_MODELS` entry (`make smoketest`/`smoketest-host`) to confirm it actually answers, not just that it loaded. |
-
-### Consumer project
-
-Not set in this project's `.env` at all -- set on the *consumer* project's side once this stack is up, see [Connecting a consumer project](#connecting-a-consumer-project) below. This `OLLAMA_HOST` is a bare host, unlike the `host:port` one under "Ollama" above -- different variable, different `.env` file, same name by coincidence.
-
-| Variable | Description |
-|---|---|
-| `OLLAMA_HOST` / `OLLAMA_PORT` | Where the consumer project reaches this stack's Ollama. |
-| `RERANKER_HOST` / `RERANKER_PORT` | Where the consumer project reaches this stack's reranker. |
+| **Consumer project** | | |
+| `OLLAMA_HOST` | *(none)* | Bare host where the consumer project reaches this stack's Ollama. |
+| `OLLAMA_PORT` | *(none)* | Port where the consumer project reaches this stack's Ollama. |
+| `RERANKER_HOST` | *(none)* | Bare host where the consumer project reaches this stack's reranker. |
+| `RERANKER_PORT` | *(none)* | Port where the consumer project reaches this stack's reranker. |
 
 ## Connecting a consumer project
 
@@ -142,3 +131,4 @@ If you started with `make up-gpu-nvidia`, stop with `make down-gpu-nvidia` inste
 - **AMD: is GPU-in-Docker really not possible for me?** If you're on native Linux with a ROCm-supported card, GPU-in-Docker generally does work (this repo just doesn't ship an overlay for it anymore -- see AGENTS.md for why it isn't maintained here, and git history before that note for the shape it used to have). If you're on Windows/WSL2, it isn't -- confirmed by hand against real hardware, see AGENTS.md.
 - **CPU usage seems capped / rerank calls are slower than expected.** Torch's thread count is derived automatically from the `reranker` service's `cpus:` limit in `docker-compose.yml` (see `reranker/src/libs/cpu.py`), so raising that limit is enough on its own -- see `reranker/src/libs/model.py`'s `load_model()` docstring for why torch needs to be told at all.
 - **Need the reranker reachable from another machine on the LAN.** Docker already publishes it on all host interfaces (`0.0.0.0:${RERANKER_PORT}`); the host firewall is what's actually blocking it by default. On Windows: `New-NetFirewallRule -DisplayName "reranker" -Direction Inbound -Protocol TCP -LocalPort 50051 -Action Allow -Profile Private` (requires an elevated PowerShell, and the network must actually be categorized Private -- check with `Get-NetConnectionProfile`).
+- **Need Ollama reachable from another machine on the LAN (`ConnectError`/`No route to host` from a remote client).** Same story as the reranker above -- Docker already publishes `ollama` on all host interfaces (`0.0.0.0:${OLLAMA_PORT}`), so a `No route to host` from a remote machine (e.g. curling `http://<host-ip>:11434` from a MacBook) is almost always the host firewall or the wrong network profile, not a Docker/Ollama config problem. On Windows: `New-NetFirewallRule -DisplayName "ollama" -Direction Inbound -Protocol TCP -LocalPort 11434 -Action Allow -Profile Private` (elevated PowerShell; confirm the network is actually Private via `Get-NetConnectionProfile` first -- a Public profile silently drops the rule's effect). Also double-check the IP itself hasn't changed (DHCP) and that both machines are actually on the same subnet/VLAN.
