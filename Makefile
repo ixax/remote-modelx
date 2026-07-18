@@ -1,16 +1,25 @@
 -include .env
 export
 
-.PHONY: up up-gpu down restart status ps logs pull smoketest clean
+.PHONY: up up-gpu-nvidia up-gpu-amd down down-gpu-nvidia down-gpu-amd restart status ps logs pull smoketest clean
 
 up:
 	docker compose up -d --build
 
-up-gpu:
+up-gpu-nvidia:
 	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+up-gpu-amd:
+	docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up -d --build
 
 down:
 	docker compose down
+
+down-gpu-nvidia:
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
+
+down-gpu-amd:
+	docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml down
 
 clean:
 	docker compose down -v

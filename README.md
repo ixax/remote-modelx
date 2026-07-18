@@ -11,10 +11,16 @@ docker compose logs -f ollama-pull   # watch the Ollama model pull -- can take m
 docker compose logs -f reranker      # watch it download + load RERANKER_MODEL on startup
 ```
 
-On a host with an NVIDIA GPU reachable from Docker (Windows + Docker Desktop/WSL2, or Linux with the NVIDIA Container Toolkit; not macOS -- no GPU passthrough into Docker containers there):
+On a host with an NVIDIA GPU reachable from Docker:
 
 ```bash
-make up-gpu
+make up-gpu-nvidia
+```
+
+On a host with a ROCm-capable AMD GPU reachable from Docker:
+
+```bash
+make up-gpu-amd
 ```
 
 Once everything's up, optionally sanity-check the Ollama models by hand:
@@ -27,10 +33,11 @@ make smoketest
 
 - **`docker-compose.yml`** -- `ollama` (server, port `${OLLAMA_PORT:-11434}`), `ollama-pull` (one-shot job that pulls + warms every model in `OLLAMA_MODELS`), `model-smoketest` (manual, opt-in -- see below), and `reranker` (cross-encoder HTTP service, port `${RERANKER_PORT:-50051}`).
 - **`docker-compose.gpu.yml`** -- optional override reserving the host's NVIDIA GPU for `ollama` and `reranker`, and rebuilding `reranker`'s torch against a CUDA wheel instead of the CPU one.
+- **`docker-compose.gpu-amd.yml`** -- optional override reserving the host's AMD (ROCm) GPU for `ollama` and `reranker`: swaps the Ollama image for `ollama/ollama:rocm`, passes through `/dev/kfd`/`/dev/dri`, and rebuilds `reranker`'s torch against a ROCm wheel instead of the CPU one.
 - **`.env.example`** -- everything optional, including `OLLAMA_MODELS` (a comma-separated list; leave it unset and `ollama-pull` skips it and logs why), `RERANKER_MODEL` (leave it unset and the `reranker` service logs why and exits instead of starting), and `MODEL_SMOKETEST_PROMPT` (what `make smoketest` sends each model).
-- **`Makefile`** -- `make up`/`up-gpu`/`down`/`clean`/`restart`/`status`/`logs`/`pull`/`smoketest` (see targets below).
+- **`Makefile`** -- `make up`/`up-gpu-nvidia`/`up-gpu-amd`/`down`/`down-gpu-nvidia`/`down-gpu-amd`/`clean`/`restart`/`status`/`logs`/`pull`/`smoketest` (see targets below).
 - **`ollama/`** -- `entrypoint.sh` (the `ollama-pull` script, bind-mounted) and `smoketest.sh` (the `model-smoketest` script, bind-mounted).
-- **`reranker/`** -- `Dockerfile` (torch build variant controlled by the `TORCH_INDEX_URL` build arg -- CPU wheel by default, CUDA wheel under `make up-gpu`), `src/` (FastAPI app + `libs/`, including its own config loading/logging), `config.yml` (`max_length`, bind-mounted -- edit and restart, no rebuild needed).
+- **`reranker/`** -- `Dockerfile` (torch build variant picked by the internal `GPU_VENDOR` build arg -- CPU wheel by default, CUDA wheel under `make up-gpu-nvidia`, ROCm wheel under `make up-gpu-amd`; nothing to configure from outside), `src/` (FastAPI app + `libs/`, including its own config loading/logging), `config.yml` (`max_length`, bind-mounted -- edit and restart, no rebuild needed).
 
 ## Environment variables
 
@@ -42,7 +49,7 @@ All optional -- copy `.env.example` to `.env` and uncomment/edit as needed; ever
 | `OLLAMA_PORT` | `11434` |
 | `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` |
 | `RERANKER_PORT` | `50051` |
-| `RERANKER_TORCH_INDEX_URL` | `.../whl/cpu` (`.../whl/cu121` under `docker-compose.gpu.yml`) |
+| `HSA_OVERRIDE_GFX_VERSION` | `10.3.0` (`docker-compose.gpu-amd.yml` only) |
 | `LOG_LEVEL` | `INFO` |
 | `MODEL_SMOKETEST_PROMPT` | `Hello, who are you?` |
 
@@ -50,7 +57,7 @@ All optional -- copy `.env.example` to `.env` and uncomment/edit as needed; ever
 - **`OLLAMA_PORT`** (used by `ollama`) -- host-published port for the Ollama server.
 - **`RERANKER_MODEL`** (used by `reranker`) -- cross-encoder model, pulled from Hugging Face at container startup (not build time). Unset means the `reranker` container logs why and exits instead of starting.
 - **`RERANKER_PORT`** (used by `reranker`) -- host-published port for the reranker HTTP service.
-- **`RERANKER_TORCH_INDEX_URL`** (used by `reranker`, build-time) -- which PyTorch wheel index to build `reranker`'s torch from. Only worth touching for a GPU build with an older CUDA driver, e.g. `.../whl/cu118`. Requires a rebuild (`--build`) to take effect.
+- **`HSA_OVERRIDE_GFX_VERSION`** (used by `ollama`, `reranker` under `docker-compose.gpu-amd.yml`) -- makes ROCm treat the card as a different gfx target. Needed for RDNA2 mobile parts like the RX 6800M (gfx1031), which aren't on ROCm's official support list but work via the desktop gfx1030 build. Check the card's real target with `rocminfo | grep gfx` if unsure.
 - **`LOG_LEVEL`** (used by `reranker`) -- Python logging level: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Ollama has its own separate logging, unaffected by this.
 - **`MODEL_SMOKETEST_PROMPT`** (used by `model-smoketest`) -- prompt `make smoketest` sends to each `OLLAMA_MODELS` entry.
 
@@ -80,7 +87,7 @@ Model names (each entry in `OLLAMA_MODELS`, plus `RERANKER_MODEL`) must match be
 make smoketest
 ```
 
-Sends `MODEL_SMOKETEST_PROMPT` (default `"Hello, who are you?"`) to every model in `OLLAMA_MODELS`, one at a time, and logs each reply to the terminal -- a quick "does this model actually answer sensibly" check, as opposed to `ollama-pull`'s own warm-up call, which discards the response and ignores failures. Manual and opt-in: it's gated behind Compose's `smoketest` profile, so it never runs as part of `make up`/`up-gpu`, and it exits after one pass instead of staying up. Run it whenever you want, once `ollama-pull` has finished (`docker compose logs -f ollama-pull`).
+Sends `MODEL_SMOKETEST_PROMPT` (default `"Hello, who are you?"`) to every model in `OLLAMA_MODELS`, one at a time, and logs each reply to the terminal -- a quick "does this model actually answer sensibly" check, as opposed to `ollama-pull`'s own warm-up call, which discards the response and ignores failures. Manual and opt-in: it's gated behind Compose's `smoketest` profile, so it never runs as part of `make up`/`up-gpu-nvidia`/`up-gpu-amd`, and it exits after one pass instead of staying up. Run it whenever you want, once `ollama-pull` has finished (`docker compose logs -f ollama-pull`).
 
 Embedding-only models (e.g. `embeddinggemma`) are expected to fail here -- they have no chat template and reject a plain prompt outright even though their real (embedding) calls work fine. A `FAILED` line for one of those isn't a problem; see `ollama/smoketest.sh`.
 
@@ -98,10 +105,12 @@ make down    # stop, keep pulled models and cached reranker weights
 make clean   # stop and delete both
 ```
 
+If you started with `make up-gpu-nvidia` / `make up-gpu-amd`, stop with the matching `make down-gpu-nvidia` / `make down-gpu-amd` instead of plain `make down`.
+
 ## Troubleshooting
 
 - **Ollama model pulling is slow or seems stuck.** `docker compose logs -f ollama-pull`; exit code 0 means success. Re-run manually with `docker compose run --rm ollama-pull` if it's still missing afterwards.
 - **`reranker` is slow to become healthy after a fresh start.** The model loads eagerly at container startup, not lazily on the first `/rerank` call -- `RERANKER_MODEL` downloads from Hugging Face at startup if not already cached (not at build time), which needs internet access from inside the container. Watch progress with `docker compose logs -f reranker`; subsequent restarts reuse the cached weights in the `reranker_cache` volume and start fast.
 - **A consumer project can't reach Ollama or the reranker.** Confirm `OLLAMA_HOST`/`OLLAMA_PORT`/`RERANKER_HOST`/`RERANKER_PORT` in the consumer's `.env`, that this stack is actually up (`docker compose ps`), and (on Linux) that the consumer's service has the `extra_hosts` entry above if it uses `host.docker.internal`.
-- **GPU isn't being used.** Confirm you started with both compose files (`-f docker-compose.yml -f docker-compose.gpu.yml`, or `make up-gpu`), not just the base one -- and that you rebuilt (`--build`) after switching, since `reranker`'s torch build is picked at image-build time, not at container start. The GPU overlay defaults `reranker` to a CUDA 12.1 wheel; for an older driver, rebuild with `RERANKER_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118` (or whichever series matches) set before `make up-gpu`.
+- **GPU isn't being used.** Confirm you started with both compose files (`-f docker-compose.yml -f docker-compose.gpu.yml`, or `make up-gpu-nvidia`; AMD is `-f docker-compose.yml -f docker-compose.gpu-amd.yml` / `make up-gpu-amd`), not just the base one -- and that you rebuilt (`--build`) after switching, since `reranker`'s torch build is picked at image-build time, not at container start. For an older NVIDIA driver that doesn't support cu121, edit the `nvidia` case in `reranker/Dockerfile` and rebuild. On AMD, confirm `/dev/kfd` and `/dev/dri` exist on the host and your user is in the `render`/`video` groups; for a card ROCm doesn't officially list (e.g. RX 6800M), check `HSA_OVERRIDE_GFX_VERSION` matches an officially-supported gfx target.
 - **CPU usage seems capped / rerank calls are slower than expected.** Torch's thread count is derived automatically from the `reranker` service's `cpus:` limit in `docker-compose.yml` (see `reranker/src/libs/cpu.py`), so raising that limit is enough on its own -- see `reranker/src/libs/model.py`'s `load_model()` docstring for why torch needs to be told at all.

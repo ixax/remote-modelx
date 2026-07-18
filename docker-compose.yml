@@ -7,7 +7,8 @@
 #   cp .env.example .env   # set OLLAMA_MODELS if you need Ollama models; RERANKER_MODEL if you need reranking
 #   docker compose up -d --build
 #
-# GPU: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# GPU (NVIDIA): docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# GPU (AMD/ROCm): docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up -d --build
 
 # Scalars pulled from the environment (with defaults), defined once here and
 # referenced by anchor below instead of repeating "${VAR:-default}" inline.
@@ -18,10 +19,6 @@ x-vars:
   reranker_model: &reranker_model ${RERANKER_MODEL:-}
   log_level: &log_level ${LOG_LEVEL:-INFO}
   model_smoketest_prompt: &model_smoketest_prompt ${MODEL_SMOKETEST_PROMPT:-Hello, who are you?}
-  # CPU by default; docker-compose.gpu.yml overrides this to a CUDA wheel
-  # index. Not just a default ARG in the Dockerfile because compose only
-  # forwards build args it's told about here.
-  reranker_torch_index: &reranker_torch_index ${RERANKER_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
 
 services:
   ollama:
@@ -89,8 +86,6 @@ services:
   reranker:
     build:
       context: ./reranker
-      args:
-        TORCH_INDEX_URL: *reranker_torch_index
     container_name: reranker
     # Not unless-stopped: entrypoint.sh exits 0 (not a crash) when
     # RERANKER_MODEL is unset, so this must not restart-loop in that case.

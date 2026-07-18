@@ -1,0 +1,39 @@
+# Optional override: reserves the host's AMD GPU (ROCm) for the `ollama`
+# and `reranker` services. Apply on top of the base file, don't replace it:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up -d --build
+#
+# Requires a ROCm-capable AMD GPU reachable from Docker, with the amdgpu
+# driver on the host and /dev/kfd + /dev/dri exposed to the container. The
+# host user must be in the `render`/`video` groups so device access
+# actually works.
+#
+# ROCm's official support list skips most RDNA2 mobile parts (e.g. the
+# RX 6800M is gfx1031). They still run via the desktop RX 6800/6900 build
+# (gfx1030) by setting HSA_OVERRIDE_GFX_VERSION=10.3.0, which is what this
+# file does below -- unofficial, but the commonly-used workaround. If your
+# card reports a different gfx target (`rocminfo | grep gfx`), adjust
+# HSA_OVERRIDE_GFX_VERSION to match the closest officially-supported one.
+services:
+  ollama:
+    image: ollama/ollama:rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
+
+  reranker:
+    build:
+      args:
+        GPU_VENDOR: amd
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
