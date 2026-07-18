@@ -18,7 +18,6 @@ doesn't need to know its own address.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from environs import Env
@@ -65,23 +64,29 @@ logger.info("reranker ready, listening for /rerank requests")
 app = FastAPI()
 
 
+# Request/response shapes below match Hugging Face Text Embeddings Inference's
+# /rerank contract (https://huggingface.github.io/text-embeddings-inference/),
+# not an ad-hoc one -- that's what lets LiteLLM's `huggingface` rerank
+# provider talk to this service without a custom adapter.
 class RerankRequest(BaseModel):
     query: str
-    documents: list[str]
+    texts: list[str]
+    return_text: bool = False
 
 
-class RerankResponse(BaseModel):
-    # Scores aligned 1:1 with `documents` in the request, in the same order
-    # (not sorted) -- the caller sorts/truncates as needed.
-    scores: list[float]
-    model: str
-    duration_ms: float
+class RerankResult(BaseModel):
+    index: int
+    score: float
+    text: str | None = None
 
 
 @app.post("/rerank")
-def rerank(request: RerankRequest) -> RerankResponse:
-    logger.info("scoring %d document(s) with %s", len(request.documents), config.model)
-    start = time.perf_counter()
-    scores = score(_model, request.query, request.documents)
-    duration_ms = (time.perf_counter() - start) * 1000
-    return RerankResponse(scores=scores, model=config.model, duration_ms=duration_ms)
+def rerank(request: RerankRequest) -> list[RerankResult]:
+    logger.info("scoring %d document(s) with %s", len(request.texts), config.model)
+    scores = score(_model, request.query, request.texts)
+    results = [
+        RerankResult(index=i, score=s, text=request.texts[i] if request.return_text else None)
+        for i, s in enumerate(scores)
+    ]
+    results.sort(key=lambda r: r.score, reverse=True)
+    return results

@@ -87,12 +87,12 @@ Not set in this project's `.env` at all: the "Consumer project" group below is s
 
 ```
 POST /rerank
-{"query": "...", "documents": ["...", "..."]}
+{"query": "...", "texts": ["...", "..."], "return_text": false}
 
--> {"scores": [0.03, 0.00002], "model": "BAAI/bge-reranker-v2-m3", "duration_ms": 412.0}
+-> [{"index": 0, "score": 0.03, "text": null}, {"index": 1, "score": 0.00002, "text": null}]
 ```
 
-`scores` is aligned 1:1 with `documents`, in request order (not sorted) -- the caller sorts/truncates as needed.
+Matches Hugging Face Text Embeddings Inference's `/rerank` contract, sorted by `score` descending -- so LiteLLM's `huggingface` rerank provider (or any other TEI-compatible client) can call this service directly, with no adapter. `return_text: true` echoes each result's source text back in its `text` field instead of `null`.
 
 ## Testing models by hand
 
