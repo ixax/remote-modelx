@@ -5,7 +5,7 @@ A standalone Docker Compose deployment of [Ollama](https://ollama.com/) and a cr
 ## Quick start
 
 ```bash
-cp .env.example .env   # set OLLAMA_MODELS, e.g. "gemma3:4b,embeddinggemma:300m", if you need Ollama models; RERANKER_MODEL (ships a working default) if you need reranking
+cp .env.example .env   # set OLLAMA_MODELS, e.g. "gemma3:4b,bge-m3", if you need Ollama models; RERANKER_MODEL, e.g. "BAAI/bge-reranker-v2-m3", if you need reranking
 make up
 docker compose logs -f ollama-pull   # watch the Ollama model pull -- can take minutes
 docker compose logs -f reranker      # watch it download + load RERANKER_MODEL on startup
@@ -47,15 +47,15 @@ All optional -- copy `.env.example` to `.env` and uncomment/edit as needed; ever
 |---|---|
 | `OLLAMA_MODELS` | *(unset)* |
 | `OLLAMA_PORT` | `11434` |
-| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` |
+| `RERANKER_MODEL` | *(unset)* |
 | `RERANKER_PORT` | `50051` |
 | `HSA_OVERRIDE_GFX_VERSION` | `10.3.0` (`docker-compose.gpu-amd.yml` only) |
 | `LOG_LEVEL` | `INFO` |
 | `MODEL_SMOKETEST_PROMPT` | `Hello, who are you?` |
 
-- **`OLLAMA_MODELS`** (used by `ollama-pull`, `model-smoketest`) -- comma-separated models to pull + warm into Ollama, e.g. `gemma3:4b,embeddinggemma:300m`. Unset means no Ollama models at all -- `ollama-pull` skips and logs why.
+- **`OLLAMA_MODELS`** (used by `ollama-pull`, `model-smoketest`) -- comma-separated models to pull + warm into Ollama, e.g. `gemma3:4b,bge-m3`. Unset means no Ollama models at all -- `ollama-pull` skips and logs why.
 - **`OLLAMA_PORT`** (used by `ollama`) -- host-published port for the Ollama server.
-- **`RERANKER_MODEL`** (used by `reranker`) -- cross-encoder model, pulled from Hugging Face at container startup (not build time). Unset means the `reranker` container logs why and exits instead of starting.
+- **`RERANKER_MODEL`** (used by `reranker`) -- cross-encoder model, pulled from Hugging Face at container startup (not build time), e.g. `BAAI/bge-reranker-v2-m3`. Unset means the `reranker` container logs why and exits instead of starting.
 - **`RERANKER_PORT`** (used by `reranker`) -- host-published port for the reranker HTTP service.
 - **`HSA_OVERRIDE_GFX_VERSION`** (used by `ollama`, `reranker` under `docker-compose.gpu-amd.yml`) -- makes ROCm treat the card as a different gfx target. Needed for RDNA2 mobile parts like the RX 6800M (gfx1031), which aren't on ROCm's official support list but work via the desktop gfx1030 build. Check the card's real target with `rocminfo | grep gfx` if unsure.
 - **`LOG_LEVEL`** (used by `reranker`) -- Python logging level: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Ollama has its own separate logging, unaffected by this.
@@ -89,7 +89,7 @@ make smoketest
 
 Sends `MODEL_SMOKETEST_PROMPT` (default `"Hello, who are you?"`) to every model in `OLLAMA_MODELS`, one at a time, and logs each reply to the terminal -- a quick "does this model actually answer sensibly" check, as opposed to `ollama-pull`'s own warm-up call, which discards the response and ignores failures. Manual and opt-in: it's gated behind Compose's `smoketest` profile, so it never runs as part of `make up`/`up-gpu-nvidia`/`up-gpu-amd`, and it exits after one pass instead of staying up. Run it whenever you want, once `ollama-pull` has finished (`docker compose logs -f ollama-pull`).
 
-Embedding-only models (e.g. `embeddinggemma`) are expected to fail here -- they have no chat template and reject a plain prompt outright even though their real (embedding) calls work fine. A `FAILED` line for one of those isn't a problem; see `ollama/smoketest.sh`.
+Embedding-only models (e.g. `bge-m3`) are expected to fail here -- they have no chat template and reject a plain prompt outright even though their real (embedding) calls work fine. A `FAILED` line for one of those isn't a problem; see `ollama/smoketest.sh`.
 
 ## Re-pulling / changing models
 

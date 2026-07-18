@@ -9,10 +9,9 @@
 # Toolkit. Not applicable on macOS -- Docker Desktop there has no GPU
 # passthrough path (Metal or otherwise) into containers.
 #
-# reranker's cu121 build assumes a CUDA 12.1-compatible driver (most
-# recent-ish NVIDIA drivers qualify). For an older driver, rebuild with
-# RERANKER_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 (or
-# whichever series matches) instead of relying on this file's default.
+# reranker's build assumes a CUDA 12.1-compatible driver (most recent-ish
+# NVIDIA drivers qualify). For an older driver, edit the nvidia case in
+# reranker/Dockerfile (e.g. cu118) and rebuild.
 services:
   ollama:
     deploy:
@@ -26,7 +25,7 @@ services:
   reranker:
     build:
       args:
-        TORCH_INDEX_URL: ${RERANKER_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}
+        GPU_VENDOR: nvidia
     deploy:
       resources:
         reservations:
