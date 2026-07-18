@@ -18,6 +18,7 @@ doesn't need to know its own address.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from environs import Env
@@ -73,9 +74,14 @@ class RerankResponse(BaseModel):
     # Scores aligned 1:1 with `documents` in the request, in the same order
     # (not sorted) -- the caller sorts/truncates as needed.
     scores: list[float]
+    model: str
+    duration_ms: float
 
 
 @app.post("/rerank")
 def rerank(request: RerankRequest) -> RerankResponse:
     logger.info("scoring %d document(s) with %s", len(request.documents), config.model)
-    return RerankResponse(scores=score(_model, request.query, request.documents))
+    start = time.perf_counter()
+    scores = score(_model, request.query, request.documents)
+    duration_ms = (time.perf_counter() - start) * 1000
+    return RerankResponse(scores=scores, model=config.model, duration_ms=duration_ms)
