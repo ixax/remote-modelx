@@ -46,6 +46,10 @@ make smoketest        # CPU/NVIDIA
 make smoketest-host    # AMD
 ```
 
+## Check Ollama
+
+Open http://<MACHINE IP>>:11434/api/tags to get all available tags in Ollama
+
 ## What's here
 
 - **`docker-compose.yml`** -- `ollama` (server, port `${OLLAMA_PORT:-11434}`), `ollama-pull` (one-shot job that pulls + warms every model in `OLLAMA_MODELS` into whatever `OLLAMA_HOST` points at), `model-smoketest` (manual, opt-in -- see below), and `reranker` (cross-encoder HTTP service, port `${RERANKER_PORT:-50051}`). On the AMD path, only `reranker` and one-off `ollama-pull`/`model-smoketest` runs (via `--no-deps`) from this file are ever used -- the long-running `ollama` service isn't.
@@ -61,23 +65,23 @@ All optional -- copy `.env.example` to `.env` and uncomment/edit as needed; ever
 
 Not set in this project's `.env` at all: the "Consumer project" group below is set on the *consumer* project's side once this stack is up, see [Connecting a consumer project](#connecting-a-consumer-project). Its `OLLAMA_HOST` is a bare host, unlike the `host:port` one in the "Ollama" group -- different variable, different `.env` file, same name by coincidence.
 
-| Variable | Default | Description |
-|---|---|---|
-| **Ollama** | | |
-| `OLLAMA_MODELS` | *(unset)* | Comma-separated models to pull + warm into Ollama, e.g. `gemma3:12b,bge-m3`. Read by `ollama-pull`/`model-smoketest`. Unset means no Ollama models at all. |
-| `OLLAMA_PORT` | `11434` | Host-published port for the Docker `ollama` service. CPU/NVIDIA only -- ignored on AMD (`make up-amd`/`*-host` targets hardcode `host.docker.internal:11434` instead, Ollama's own default port). |
-| `OLLAMA_HOST` | `ollama:11434` | Internal, not in `.env.example` -- where `ollama-pull`/`model-smoketest` point the `ollama` CLI, in Ollama's own `host:port` format (not the bare-host `OLLAMA_HOST` below under "Consumer project", which is this repo's own, unrelated convention for a different `.env`). The `-host` Makefile targets override it via `-e`, not `.env`. |
-| **Reranker** | | |
-| `RERANKER_MODEL` | *(unset)* | Cross-encoder model, pulled from Hugging Face at container startup (not build time), e.g. `BAAI/bge-reranker-v2-m3`. Unset means the `reranker` container logs why and exits instead of starting. |
-| `RERANKER_PORT` | `50051` | Host-published port for the reranker HTTP service. |
-| `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Ollama has its own separate logging, unaffected by this. |
-| **Testing** | | |
-| `MODEL_SMOKETEST_PROMPT` | `Hello, who are you?` | Prompt sent to each `OLLAMA_MODELS` entry (`make smoketest`/`smoketest-host`) to confirm it actually answers, not just that it loaded. |
-| **Consumer project** | | |
-| `OLLAMA_HOST` | *(none)* | Bare host where the consumer project reaches this stack's Ollama. |
-| `OLLAMA_PORT` | *(none)* | Port where the consumer project reaches this stack's Ollama. |
-| `RERANKER_HOST` | *(none)* | Bare host where the consumer project reaches this stack's reranker. |
-| `RERANKER_PORT` | *(none)* | Port where the consumer project reaches this stack's reranker. |
+| Variable                 | Default               | Description                                                                                                                                                                                                                                                                                                                                 |
+|--------------------------|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Ollama**               |                       |                                                                                                                                                                                                                                                                                                                                             |
+| `OLLAMA_MODELS`          | *(unset)*             | Comma-separated models to pull + warm into Ollama, e.g. `gemma3:12b,bge-m3`. Read by `ollama-pull`/`model-smoketest`. Unset means no Ollama models at all.                                                                                                                                                                                  |
+| `OLLAMA_PORT`            | `11434`               | Host-published port for the Docker `ollama` service. CPU/NVIDIA only -- ignored on AMD (`make up-amd`/`*-host` targets hardcode `host.docker.internal:11434` instead, Ollama's own default port).                                                                                                                                           |
+| `OLLAMA_HOST`            | `ollama:11434`        | Internal, not in `.env.example` -- where `ollama-pull`/`model-smoketest` point the `ollama` CLI, in Ollama's own `host:port` format (not the bare-host `OLLAMA_HOST` below under "Consumer project", which is this repo's own, unrelated convention for a different `.env`). The `-host` Makefile targets override it via `-e`, not `.env`. |
+| **Reranker**             |                       |                                                                                                                                                                                                                                                                                                                                             |
+| `RERANKER_MODEL`         | *(unset)*             | Cross-encoder model, pulled from Hugging Face at container startup (not build time), e.g. `BAAI/bge-reranker-v2-m3`. Unset means the `reranker` container logs why and exits instead of starting.                                                                                                                                           |
+| `RERANKER_PORT`          | `50051`               | Host-published port for the reranker HTTP service.                                                                                                                                                                                                                                                                                          |
+| `LOG_LEVEL`              | `INFO`                | Python logging level: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Ollama has its own separate logging, unaffected by this.                                                                                                                                                                                                                 |
+| **Testing**              |                       |                                                                                                                                                                                                                                                                                                                                             |
+| `MODEL_SMOKETEST_PROMPT` | `Hello, who are you?` | Prompt sent to each `OLLAMA_MODELS` entry (`make smoketest`/`smoketest-host`) to confirm it actually answers, not just that it loaded.                                                                                                                                                                                                      |
+| **Consumer project**     |                       |                                                                                                                                                                                                                                                                                                                                             |
+| `OLLAMA_HOST`            | *(none)*              | Bare host where the consumer project reaches this stack's Ollama.                                                                                                                                                                                                                                                                           |
+| `OLLAMA_PORT`            | *(none)*              | Port where the consumer project reaches this stack's Ollama.                                                                                                                                                                                                                                                                                |
+| `RERANKER_HOST`          | *(none)*              | Bare host where the consumer project reaches this stack's reranker.                                                                                                                                                                                                                                                                         |
+| `RERANKER_PORT`          | *(none)*              | Port where the consumer project reaches this stack's reranker.                                                                                                                                                                                                                                                                              |
 
 ## Connecting a consumer project
 
