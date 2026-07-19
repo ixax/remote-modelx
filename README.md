@@ -8,9 +8,15 @@ A standalone deployment of [Ollama](https://ollama.com/) and a cross-encoder rer
 cp .env.example .env   # set OLLAMA_MODELS, e.g. "gemma3:4b,bge-m3", if you need Ollama models; RERANKER_MODEL, e.g. "BAAI/bge-reranker-v2-m3", if you need reranking
 ```
 
-Pick the path that matches your GPU (see [AGENTS.md](AGENTS.md) for why AMD is different):
+There are exactly three ways to run this stack, chosen by your GPU -- pick the one matching your hardware and follow it start to finish, they don't mix (see [AGENTS.md](AGENTS.md) for why AMD in particular is structured so differently):
 
-**CPU (default, no GPU or GPU not reachable from Docker):**
+1. [CPU-only](#1-cpu-only-default) -- no GPU, or a GPU Docker can't reach.
+2. [NVIDIA GPU](#2-nvidia-gpu) -- GPU-in-Docker, both `ollama` and `reranker` accelerated.
+3. [AMD GPU](#3-amd-gpu-native-ollama--reranker-in-docker) -- GPU-in-Docker doesn't work for AMD (see AGENTS.md); Ollama runs natively on the host instead, `reranker` stays in Docker (CPU-only).
+
+### 1. CPU-only (default)
+
+Both `ollama` and `reranker` run as plain Docker containers, no GPU involved.
 
 ```bash
 make up
@@ -18,13 +24,53 @@ docker compose logs -f ollama-pull   # watch the Ollama model pull -- can take m
 docker compose logs -f reranker      # watch it download + load RERANKER_MODEL on startup
 ```
 
-**NVIDIA GPU:** requires an NVIDIA GPU reachable from Docker -- on Windows that's Docker Desktop with the WSL2 backend plus the NVIDIA driver on the Windows host (provides CUDA support inside WSL2 itself, no separate driver install inside WSL/the container); on Linux, the NVIDIA Container Toolkit. Not applicable on macOS -- Docker Desktop there has no GPU passthrough path into containers.
+Then confirm the models actually came up (see [Checking Ollama models](#checking-ollama-models)) and, optionally, run the smoke test:
+
+```bash
+make smoketest
+```
+
+Stop with `make down` (keeps pulled models/cached reranker weights) or `make clean` (deletes both) -- see [Stopping / data](#stopping--data).
+
+### 2. NVIDIA GPU
+
+Requires an NVIDIA GPU reachable from Docker -- on Windows that's Docker Desktop with the WSL2 backend plus the NVIDIA driver on the Windows host (provides CUDA support inside WSL2 itself, no separate driver install inside WSL/the container); on Linux, the NVIDIA Container Toolkit. Not applicable on macOS -- Docker Desktop there has no GPU passthrough path into containers.
+
+This path layers `docker-compose.nvidia.yml` on top of the base file (`make up-gpu-nvidia` does this for you) -- it reserves the GPU for both `ollama` and `reranker`, and rebuilds `reranker`'s torch against a CUDA wheel instead of the CPU one.
 
 ```bash
 make up-gpu-nvidia
+docker compose logs -f ollama-pull   # watch the Ollama model pull -- can take minutes
+docker compose logs -f reranker      # watch it download + load RERANKER_MODEL on startup
 ```
 
-**AMD GPU:** GPU-in-Docker doesn't work for AMD here (WSL2 lacks the device nodes ROCm needs, and even AMD's WSL-specific DXCore path hangs on real dispatch -- see AGENTS.md for the full story). Install [Ollama](https://ollama.com/download) natively on the host instead, then:
+Then confirm the models actually came up (see [Checking Ollama models](#checking-ollama-models)) and, optionally, run the smoke test:
+
+```bash
+make smoketest
+```
+
+Stop with `make down-gpu-nvidia`, **not** plain `make down` -- see [Stopping / data](#stopping--data). If the GPU doesn't actually seem to be in use, see the Troubleshooting entry below.
+
+### 3. AMD GPU (native Ollama + reranker in Docker)
+
+GPU-in-Docker doesn't work for AMD here (WSL2 lacks the device nodes ROCm needs, and even AMD's WSL-specific DXCore path hangs on real dispatch -- see AGENTS.md for the full story). Ollama runs natively on the host instead, with GPU accel Ollama provides itself (Vulkan) outside Docker entirely; `reranker` still runs in Docker, CPU-only.
+
+**Step 1 -- install Ollama natively:** [ollama.com/download](https://ollama.com/download).
+
+**Step 2 -- make it keep pulled models resident in memory permanently.** Left at its default, native Ollama unloads an idle model after 5 minutes, which means the *next* request pays a multi-second cold-load stall again -- set `OLLAMA_KEEP_ALIVE` to `-1` (never unload) as a persistent environment variable, then restart Ollama so it picks the value up:
+
+- **Windows:** `setx OLLAMA_KEEP_ALIVE "-1"`, then quit and relaunch the Ollama tray app (`setx` only affects *new* processes, not the currently-running one).
+- **Linux (systemd service):** `sudo systemctl edit ollama`, add under `[Service]`:
+  ```ini
+  Environment="OLLAMA_KEEP_ALIVE=-1"
+  ```
+  then `sudo systemctl daemon-reload && sudo systemctl restart ollama`.
+- **macOS:** `launchctl setenv OLLAMA_KEEP_ALIVE -1`, then quit and relaunch the Ollama app.
+
+This is the native-Ollama equivalent of `OLLAMA_KEEP_ALIVE: "-1"` already set on the Docker `ollama` service in `docker-compose.yml` for the CPU/NVIDIA paths -- native Ollama isn't a Compose service here, so it has no `docker-compose.yml` entry to inherit that from, and needs it set on the host instead.
+
+**Step 3 -- pull/warm your models and bring up `reranker`:**
 
 ```bash
 make up-amd
@@ -39,16 +85,21 @@ docker compose run --rm --no-deps -e OLLAMA_HOST=host.docker.internal:11434 olla
 docker compose up -d --build reranker
 ```
 
-On any path, once everything's up, optionally sanity-check the Ollama models by hand:
+**Step 4 -- confirm the models actually came up** (see [Checking Ollama models](#checking-ollama-models)) and, optionally, run the smoke test:
 
 ```bash
-make smoketest        # CPU/NVIDIA
-make smoketest-host    # AMD
+make smoketest-host
 ```
 
-## Check Ollama
+Stop with `docker compose down` (only stops `reranker` -- Ollama's own models live in Ollama's own data directory on the host, unaffected; manage those with `ollama rm <model>` etc, see [Stopping / data](#stopping--data)).
 
-Open http://<MACHINE IP>>:11434/api/tags to get all available tags in Ollama
+## Checking Ollama models
+
+Works the same way on every path (CPU/NVIDIA's Docker `ollama`, or AMD's native install) -- Ollama's own HTTP API/CLI don't care which one it is:
+
+- **Which models are pulled at all:** `ollama list`, or `curl http://<host>:11434/api/tags` (`<host>` is `localhost` if you're on the same machine, the Docker host's IP/hostname otherwise).
+- **Which models are actually loaded into memory right now** (as opposed to merely pulled to disk), plus when each is due to be evicted: `curl http://<host>:11434/api/ps` -- look at each entry's `expires_at`. On the CPU/NVIDIA Docker path and on AMD once you've set `OLLAMA_KEEP_ALIVE=-1` (Step 2 above), a loaded model's `expires_at` reads as a far-future date, meaning it never auto-unloads.
+- **Does a model actually answer, not just load:** the smoke test (`make smoketest`/`smoketest-host`) sends each `OLLAMA_MODELS` entry a real prompt -- see [Testing models by hand](#testing-models-by-hand).
 
 ## What's here
 
